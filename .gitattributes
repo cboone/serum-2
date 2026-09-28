@@ -1,0 +1,8 @@
+# Serum presets and curves are compressed CBOR. With the diff driver enabled
+# (`make git-setup`), git decodes them to JSON through `tools/serumfile.py dump`
+# so `git diff` and `git log -p` show readable changes.
+*.SerumPreset diff=serum
+*.XferShape diff=serum
+
+# Wavetables are raw audio; never diff or merge them as text.
+*.wav binary

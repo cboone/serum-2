@@ -1,0 +1,14 @@
+# Python (ruff formats these)
+.venv/
+__pycache__/
+*.py
+
+# Generated
+CHANGELOG.md
+
+# Scrut expectations are exact command output, trailing spaces included.
+tests/scrut/
+
+# Node
+node_modules/
+package-lock.json

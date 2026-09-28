@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "*.md"
+      - "docs/**"
+      - "LICENSE"
+      - ".claude/**"
+      - "**/CLAUDE.md"
+      - "**/AGENTS.md"
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - "*.md"
+      - "docs/**"
+      - "LICENSE"
+      - ".claude/**"
+      - "**/CLAUDE.md"
+      - "**/AGENTS.md"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+
+      - name: Ruff lint
+        run: uvx ruff@0.16.5 check .
+
+  format:
+    name: Format
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+
+      - name: Ruff format
+        run: uvx ruff@0.16.5 format --check .
+
+  github-lint:
+    name: Actionlint
+    uses: cboone/gh-actions/.github/workflows/lint-github-actions.yml@3c9adb5a8b166444d3c0e3fe606d55f0dc7ac726 # v5.0.0
+
+  test-scrut:
+    # The tools are `uv run --script` shebangs, so uv has to be on PATH before
+    # scrut runs anything; setup-uv installs a pinned, checksum-verified uv.
+    #
+    # The tests read their fixtures through REPO_ROOT, and scrut runs each test
+    # file in a temporary directory, so REPO_ROOT must be absolute. The reusable
+    # workflow expands a value starting with `./` against the checkout, which
+    # makes `./` the checkout root. A `${{ github.workspace }}` expression does
+    # not work here: it is empty in a reusable-workflow call's `with:` block.
+    name: Scrut
+    uses: cboone/gh-actions/.github/workflows/run-scrut-tests.yml@3c9adb5a8b166444d3c0e3fe606d55f0dc7ac726 # v5.0.0
+    with:
+      scrut-test-dir: "tests/scrut/"
+      setup-uv: true
+      scrut-env: |
+        REPO_ROOT=./
