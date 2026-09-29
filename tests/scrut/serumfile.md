@@ -71,8 +71,9 @@ $ mkdir -p empty-curves && "${REPO_ROOT}/tools/serumfile.py" rowcurves "${REPO_R
 There is no default folder, so a missing argument prints usage and exits 1.
 
 ```scrut
-$ "${REPO_ROOT}/tools/serumfile.py" rowcurves "${REPO_ROOT}/tests/scrut/fixtures/serum/Presets/Example.SerumPreset" > /dev/null
-[1]
+$ "${REPO_ROOT}/tools/serumfile.py" rowcurves "${REPO_ROOT}/tests/scrut/fixtures/serum/Presets/Example.SerumPreset" > usage.txt; echo "exit $?"; grep 'rowcurves  FILE' usage.txt
+exit 1
+    serumfile.py rowcurves  FILE CURVE_DIR    name the curve file in CURVE_DIR matching each row
 ```
 
 ## curve lists points with MIDI numbers and grid squares
