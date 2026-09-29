@@ -1,6 +1,6 @@
 # Serum 2 file formats and tooling
 
-These structures were reverse-engineered from files saved by Serum 2.1.5. Nothing here comes from Xfer Records documentation. Curves, wavetables and a modified preset copy written by these tools all loaded in Serum 2.1.5, and other versions may differ. Each claim below says whether it was confirmed against saved files or inferred. The implementation is in `tools/serumfile.py`.
+These structures were reverse-engineered from files saved by Serum 2.1.5. Nothing here comes from Xfer Records documentation. Curves, wavetables and a modified preset copy written by these tools all loaded in Serum 2.1.5, and other versions may differ. Structure described below without a qualifier was observed in files saved by Serum 2.1.5. Claims that go further say how they were established, and anything inferred or unconfirmed is marked as such. The implementation is in `tools/serumfile.py`.
 
 This project is not affiliated with, endorsed by, or sponsored by Xfer Records. Serum is a trademark of Xfer Records, named here only to describe compatibility.
 
