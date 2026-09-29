@@ -17,7 +17,7 @@ This project is not affiliated with, endorsed by, or sponsored by Xfer Records. 
 
 - [`uv`](https://docs.astral.sh/uv/) (the only hard requirement to _run_ the tools)
 - [`scrut`](https://github.com/facebookincubator/scrut) to run the CLI tests
-- Node and `npm` to run the text checks, which come from this repository's `package-lock.json`
+- Node 22.18.0 or later and `npm` to run the text checks, which come from this repository's `package-lock.json` (`cspell` requires that Node version)
 
 There is no Python dependency install step. Every tool is a standalone script carrying [PEP 723](https://peps.python.org/pep-0723/) inline metadata with exact pins and a hash-checked lockfile (`tools/*.py.lock`), so `uv` resolves each script's dependencies on first run.
 

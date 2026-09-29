@@ -4,6 +4,9 @@
   "private": true,
   "description": "Pinned text-linting tools for serum-2. Not a JavaScript project: these are the Markdown, formatting and spelling linters, pinned here so local runs and CI use the same versions.",
   "license": "MIT",
+  "engines": {
+    "node": ">=22.18.0"
+  },
   "scripts": {
     "lint:md": "markdownlint-cli2 \"**/*.md\"",
     "lint:md:fix": "markdownlint-cli2 --fix \"**/*.md\"",
