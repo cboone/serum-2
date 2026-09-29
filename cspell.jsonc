@@ -1,0 +1,33 @@
+{
+  "version": "0.2",
+  "language": "en",
+  "dictionaryDefinitions": [
+    {
+      "name": "project-words",
+      "path": "./cspell-words.txt",
+      "addWords": true,
+    },
+  ],
+  "dictionaries": ["project-words"],
+  "ignorePaths": [
+    "node_modules/",
+    ".venv/",
+    "venv/",
+    "__pycache__/",
+    // Both forms on purpose. In a normal checkout .git is a directory; in a
+    // git worktree it is a file, which "/"-suffixed patterns do not match.
+    ".git",
+    ".git/",
+    "*.lock",
+    "CHANGELOG.md",
+    // Generated binary assets.
+    "serum/Tables/",
+    "tests/scrut/fixtures/serum/",
+    "package-lock.json",
+    "LICENSE-ASSETS",
+  ],
+  "ignoreRegExpList": [
+    // SHA pins on GitHub Actions `uses:` lines.
+    "/@[0-9a-f]{40}/g",
+  ],
+}

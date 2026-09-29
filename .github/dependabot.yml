@@ -1,0 +1,65 @@
+# Dependabot keeps two surfaces current.
+#
+# 1. github-actions: every external `uses:` reference. These are SHA-pinned
+#    with a trailing `# vX.Y.Z` comment, and Dependabot updates the SHA and the
+#    comment together.
+# 2. npm: the text linters in package.json, pinned exactly.
+#    `versioning-strategy: increase` bumps those exact pins rather than
+#    widening them to a caret range.
+#
+# Dependabot does NOT track the Python tools. Their dependencies are exact pins
+# in each script's PEP 723 block with a `tools/*.py.lock` beside it, which no
+# Dependabot ecosystem reads; update them with `uv lock --script`. It also
+# cannot see the Ruff version pinned in the Makefile and ci.yml.
+#
+# Weekly, with minor and patch updates grouped and majors opened individually
+# so a breaking change stays visible. The default labels apply.
+
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: America/New_York
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      github-actions-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+      github-actions-major:
+        patterns:
+          - "*"
+        update-types:
+          - major
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: America/New_York
+    versioning-strategy: increase
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      npm-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+      npm-major:
+        patterns:
+          - "*"
+        update-types:
+          - major

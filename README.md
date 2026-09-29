@@ -2,6 +2,8 @@
 
 Command-line tools for reading, writing, inspecting and diffing Serum 2 presets, curves and wavetables, built on a reverse-engineered description of the file format.
 
+The format was worked out from files saved by Serum 2.1.5. Other versions may store things differently; if a file from another version fails `verify`, please [open an issue](https://github.com/cboone/serum-2/issues).
+
 ## Contents
 
 - [`tools/serumfile.py`](tools/serumfile.py): read, verify, dump, diff and write Serum 2 presets (`.SerumPreset`) and curves (`.XferShape`), list a preset's modulation matrix (`matrix`), name the curve file loaded in each matrix row (`rowcurves`), and list a curve's points (`curve`).
@@ -30,6 +32,26 @@ tools/make_sweep.py          OUTDIR
 ```
 
 To use the wavetables, copy `serum/Tables/*.wav` into the `Tables/User` folder inside Serum's Serum 2 Presets folder.
+
+### Readable diffs in Git
+
+If you keep presets or curves in a Git repository, `serumfile.py dump` can serve as a diff driver so `git diff` and `git log -p` show decoded JSON instead of binary changes. In this repository, `make git-setup` configures it. In your own repository, add these lines to `.gitattributes`:
+
+```text
+*.SerumPreset diff=serum
+*.XferShape diff=serum
+```
+
+Then point the driver at your copy of the script:
+
+```bash
+git config diff.serum.textconv "/path/to/serum-2/tools/serumfile.py dump"
+git config diff.serum.cachetextconv true
+```
+
+## Contributing
+
+Bug reports and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md), which covers the rules for example files and for claims about the format.
 
 ## What you make is yours
 

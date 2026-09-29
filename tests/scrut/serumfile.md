@@ -66,6 +66,16 @@ $ mkdir -p empty-curves && "${REPO_ROOT}/tools/serumfile.py" rowcurves "${REPO_R
  2      Note -> Oscillator[A].Detune               no curve files found
 ```
 
+## rowcurves requires a curve folder
+
+There is no default folder, so a missing argument prints usage and exits 1. Arguments are checked before any file is read, so the preset need not exist.
+
+```scrut
+$ "${REPO_ROOT}/tools/serumfile.py" rowcurves missing.SerumPreset > usage.txt; echo "exit $?"; grep 'rowcurves  FILE' usage.txt
+exit 1
+    serumfile.py rowcurves  FILE CURVE_DIR    name the curve file in CURVE_DIR matching each row
+```
+
 ## curve lists points with MIDI numbers and grid squares
 
 ```scrut
