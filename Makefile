@@ -26,9 +26,10 @@ node_modules: package-lock.json
 
 # The text linters run from node_modules rather than whatever is on PATH, so
 # these match CI. CI installs the same package-lock.json.
-text-lint: node-tools ## Run markdownlint and Prettier checks
+text-lint: node-tools ## Run markdownlint, Prettier and cspell checks
 	npm run --silent lint:md
 	npm run --silent format:check
+	npm run --silent spell
 
 text-fix: node-tools ## Apply Prettier formatting and markdownlint fixes
 	npm run --silent format:write

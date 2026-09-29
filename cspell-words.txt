@@ -1,0 +1,43 @@
+# Project vocabulary for cspell. One word per line.
+# Regenerate candidates with:
+#   npx cspell . --unique --words-only --no-progress | sort -uf
+
+# Serum and its file format
+lfophasor
+Reso
+Rossler
+rowcurves
+serumfile
+wavetable
+wavetables
+Xfer
+xferrecords
+
+# Signal processing
+irfft
+timbral
+
+# Python and libraries
+cbor
+frombuffer
+HHIIHH
+isort
+numpy
+phasor
+pycache
+pycodestyle
+pyflakes
+pyproject
+PYTHONPATH
+pyupgrade
+tobytes
+venv
+zstandard
+zstd
+
+# Git and tooling
+cachetextconv
+cboone
+lockfiles
+scrut
+textconv
