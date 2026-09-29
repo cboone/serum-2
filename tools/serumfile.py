@@ -35,7 +35,7 @@ CLI:
     serumfile.py verify     FILE              hash and CBOR round-trip checks (exit 1 on failure)
     serumfile.py dump       FILE [OUT.json]   whole body as JSON
     serumfile.py matrix     FILE              readable mod-matrix listing (presets)
-    serumfile.py rowcurves  FILE [CURVE_DIR]  name the curve file in each row (default serum/Curves)
+    serumfile.py rowcurves  FILE CURVE_DIR    name the curve file in CURVE_DIR matching each row
     serumfile.py diff       A B               every differing leaf between two files
     serumfile.py curve      FILE              point list of a .XferShape curve
 
@@ -55,8 +55,6 @@ import cbor2
 import zstandard
 
 MAGIC = b"XferJson\x00"
-# The committed curve files; rowcurves compares rows against these by default.
-REPO_CURVES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "serum", "Curves")
 
 
 # ---------------------------------------------------------------- container I/O
@@ -349,7 +347,10 @@ def main(argv):
         for line in matrix(body):
             print(line)
     elif cmd == "rowcurves":
-        curves = load_curves(argv[3] if len(argv) > 3 else REPO_CURVES)
+        if len(argv) < 4:
+            print(__doc__)
+            return 1
+        curves = load_curves(argv[3])
         for i, s, matches, nearest in row_curves(body, curves):
             src = SOURCES.get(s["source"][0], s["source"][0])
             if matches:
