@@ -70,3 +70,12 @@ Approved. After this work merges, cut `v0.1.0` with the `release` skill, so down
 - Every Markdown file naming Serum carries the disclaimer.
 - Tables and fixtures still regenerate identically (checksums).
 - `gh api repos/cboone/serum-2` and its rulesets match the intended settings.
+
+## Outcome
+
+Steps 1 to 6 are done in PR #1. `make check`, `actionlint`, and local gitleaks and TruffleHog scans of the full history pass, and tables and fixtures regenerate identically. The repository settings, topics and both rulesets were applied on 2026-09-29 and match `audio-tools` field for field; the rulesets also carry that repository's bypass for the admin role.
+
+- The disclaimer appears in the user-facing documentation: the README, `CONTRIBUTING.md` and the format reference. Agent config, the changelog and the PR template name Serum only in passing and do not carry it.
+- The code of conduct contact is `conduct@snappy.sh`, matching `audio-tools`.
+- The first draft of this plan named private repositories. The branch was rebuilt before its first push so that text never reached public history.
+- Step 7, the `v0.1.0` release, follows the merge.
