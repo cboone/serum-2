@@ -320,8 +320,12 @@ def _short(v, n=120):
     return s if len(s) <= n else s[:n] + "…"
 
 
+# Arguments each command needs after its name, checked before any file is read.
+MIN_ARGS = {"verify": 1, "dump": 1, "matrix": 1, "rowcurves": 2, "diff": 2, "curve": 1}
+
+
 def main(argv):
-    if len(argv) < 3:
+    if len(argv) < 2 or argv[1] not in MIN_ARGS or len(argv) - 2 < MIN_ARGS[argv[1]]:
         print(__doc__)
         return 1
     cmd, f = argv[1], argv[2]
@@ -347,9 +351,6 @@ def main(argv):
         for line in matrix(body):
             print(line)
     elif cmd == "rowcurves":
-        if len(argv) < 4:
-            print(__doc__)
-            return 1
         curves = load_curves(argv[3])
         for i, s, matches, nearest in row_curves(body, curves):
             src = SOURCES.get(s["source"][0], s["source"][0])
@@ -370,9 +371,6 @@ def main(argv):
     elif cmd == "curve":
         for x, v in curve_points(body):
             print(f"x {x:.4f} (MIDI {127 * x:6.1f})  value {v:.4f}  ({16 * v:5.2f} squares of 16)")
-    else:
-        print(__doc__)
-        return 1
     return 0
 
 
