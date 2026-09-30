@@ -109,7 +109,7 @@ $ "${REPO_ROOT}/tools/serumfile.py" meta "${REPO_ROOT}/tests/scrut/fixtures/seru
 
 ## meta sets header fields and leaves the body unchanged
 
-The rewritten preset still verifies, and a diff against the original shows only the fields that were set.
+The rewritten preset still verifies, and a diff against the original shows only the fields that were set, in the header and in the body's copy.
 
 ```scrut
 $ cp "${REPO_ROOT}/tests/scrut/fixtures/serum/Presets/Example.SerumPreset" stamped.SerumPreset && "${REPO_ROOT}/tools/serumfile.py" meta stamped.SerumPreset presetComment="Version 1.2.0" presetAuthor="Example Author" && "${REPO_ROOT}/tools/serumfile.py" verify stamped.SerumPreset
@@ -124,6 +124,22 @@ $ "${REPO_ROOT}/tools/serumfile.py" diff "${REPO_ROOT}/tests/scrut/fixtures/seru
 /header/presetComment
     A: ""
     B: "Version 1.2.0"
+/presetAuthor
+    A: ""
+    B: "Example Author"
+/presetComment
+    A: ""
+    B: "Version 1.2.0"
+```
+
+## meta keeps the body's copy of a header field in step
+
+Presets saved by Serum repeat the name and other header fields at the top level of the body. Given a preset whose body has a `presetName`, `meta` changes both copies.
+
+```scrut
+$ printf '{"body": {"presetName": "Example"}}' > body-name.json && "${REPO_ROOT}/tools/serumfile.py" patch "${REPO_ROOT}/tests/scrut/fixtures/serum/Presets/Example.SerumPreset" body-name.json named.SerumPreset && cp named.SerumPreset renamed.SerumPreset && "${REPO_ROOT}/tools/serumfile.py" meta renamed.SerumPreset presetName=Renamed && "${REPO_ROOT}/tools/serumfile.py" diff named.SerumPreset renamed.SerumPreset | grep '^/'
+/header/presetName
+/presetName
 ```
 
 ## meta refuses fields outside the allowlist
@@ -169,6 +185,7 @@ $ "${REPO_ROOT}/tools/serumfile.py" diff "${REPO_ROOT}/tests/scrut/fixtures/seru
 /header/tags
 /ModSlot0/plainParams/kParamAmount
 /ModSlot1/plainParams/kParamAmount
+/tags
 ```
 
 ## patch refuses container header fields and unknown top-level keys

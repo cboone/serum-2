@@ -337,6 +337,16 @@ def replace_file(path, header, body, fmt):
     os.replace(tmp, path)
 
 
+def body_copy(header_patch, body):
+    """
+    The part of a header patch that applies to the body. Presets saved by Serum
+    repeat presetName, presetAuthor, presetComment, presetDescription, tags and url
+    at the top level of the body; which copy Serum reads is unconfirmed, so edits
+    keep both in step wherever the body has the field.
+    """
+    return {k: v for k, v in header_patch.items() if k in body}
+
+
 def set_meta(path, fields):
     """Rewrite a preset in place with the given header fields changed."""
     unknown = sorted(set(fields) - set(META_FIELDS))
@@ -344,6 +354,7 @@ def set_meta(path, fields):
         raise ValueError(f"cannot set {', '.join(unknown)}; settable: {', '.join(META_FIELDS)}")
     header, fmt, body = read_editable(path)
     header.update(fields)
+    body = merge_patch(body, body_copy(fields, body))
     replace_file(path, header, body, fmt)
 
 
@@ -380,6 +391,7 @@ def patch_preset(path, patch, out=None):
         )
     header, fmt, body = read_editable(path)
     header = merge_patch(header, header_patch)
+    body = merge_patch(body, body_copy(header_patch, body))
     body = merge_patch(body, patch.get("body", {}))
     replace_file(out or path, header, body, fmt)
 
