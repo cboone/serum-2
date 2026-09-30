@@ -100,6 +100,61 @@ $ PYTHONPATH="${REPO_ROOT}/tools" uv run -q --script "${REPO_ROOT}/tests/scrut/f
 identical
 ```
 
+## meta prints a preset's header without its hash
+
+```scrut
+$ "${REPO_ROOT}/tools/serumfile.py" meta "${REPO_ROOT}/tests/scrut/fixtures/serum/Presets/Example.SerumPreset" | grep -c -e presetName -e hash
+1
+```
+
+## meta sets header fields and leaves the body unchanged
+
+The rewritten preset still verifies, and a diff against the original shows only the fields that were set.
+
+```scrut
+$ cp "${REPO_ROOT}/tests/scrut/fixtures/serum/Presets/Example.SerumPreset" stamped.SerumPreset && "${REPO_ROOT}/tools/serumfile.py" meta stamped.SerumPreset presetComment="Version 1.2.0" presetAuthor="Example Author" && "${REPO_ROOT}/tools/serumfile.py" verify stamped.SerumPreset
+hash ok: True   cbor round-trip identical: True   fmt 2
+```
+
+```scrut
+$ "${REPO_ROOT}/tools/serumfile.py" diff "${REPO_ROOT}/tests/scrut/fixtures/serum/Presets/Example.SerumPreset" stamped.SerumPreset
+/header/presetAuthor
+    A: ""
+    B: "Example Author"
+/header/presetComment
+    A: ""
+    B: "Version 1.2.0"
+```
+
+## meta refuses fields outside the allowlist
+
+Container fields such as `fileType` are not settable, and the file is left as it was.
+
+```scrut
+$ cp "${REPO_ROOT}/tests/scrut/fixtures/serum/Presets/Example.SerumPreset" guarded.SerumPreset && "${REPO_ROOT}/tools/serumfile.py" meta guarded.SerumPreset fileType=Other 2>&1
+error: cannot set fileType; settable: presetName, presetAuthor, presetComment, presetDescription, url
+[1]
+```
+
+```scrut
+$ cmp guarded.SerumPreset "${REPO_ROOT}/tests/scrut/fixtures/serum/Presets/Example.SerumPreset" && echo unchanged
+unchanged
+```
+
+## meta refuses a curve and an argument without a value
+
+```scrut
+$ cp "${REPO_ROOT}/tests/scrut/fixtures/serum/Curves/S Rise.XferShape" curve.XferShape && "${REPO_ROOT}/tools/serumfile.py" meta curve.XferShape presetName=Other 2>&1
+error: curve.XferShape: not a preset
+[1]
+```
+
+```scrut
+$ "${REPO_ROOT}/tools/serumfile.py" meta guarded.SerumPreset presetName 2>&1
+error: expected FIELD=VALUE, got 'presetName'
+[1]
+```
+
 ## an unknown command prints usage and exits 1
 
 ```scrut

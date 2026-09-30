@@ -108,6 +108,8 @@ h["presetName"] = "Lead (default amounts)"
 S.write("Lead (default amounts).SerumPreset", h, body, fmt)
 ```
 
+**Editing the header only.** `serumfile.py meta FILE FIELD=VALUE ...` sets `presetName`, `presetAuthor`, `presetComment`, `presetDescription` or `url` in place and leaves the body as it was. It refuses a file whose body does not re-encode byte for byte, since rewriting that file would change more than the header. The rewritten file carries a fresh hash and a level-3 zstd frame, which Serum loads. Which of these fields Serum's preset browser displays has not been confirmed.
+
 ## Wavetables (.wav)
 
 Serum recognizes a WAV as a wavetable without the import dialog when it carries a `clm` chunk (the four-byte chunk ID is "clm" plus a space) containing `<!>2048 00000000 wavetable (www.xferrecords.com)`, which gives the frame size. The Dirichlet Sweep tables are 256 frames × 2048 samples, 32-bit float, mono, 44.1 kHz. `tools/make_sweep.py [outdir]` rebuilds both versions. Each frame is built additively (harmonics 1–1023, so nothing aliases inside the table) as three saws at phases 0, δ and 2δ. The first notch moves geometrically from harmonic 128 at frame 0 (effectively a plain saw) to harmonic 1 at frame 255, where only multiples of 3 survive and the pitch jumps an octave and a fifth. The script's self-check compares a frame against a direct sum of three ramps, and the scrut tests check that a rebuild matches the committed tables to within 1e-6 per sample (FFT output can differ in the last bits across platforms). The tables are committed in `serum/Tables/` as generated artifacts: regenerate them with `tools/make_sweep.py serum/Tables` rather than editing them, and commit the result.

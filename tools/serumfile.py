@@ -38,6 +38,10 @@ CLI:
     serumfile.py rowcurves  FILE CURVE_DIR    name the curve file in CURVE_DIR matching each row
     serumfile.py diff       A B               every differing leaf between two files
     serumfile.py curve      FILE              point list of a .XferShape curve
+    serumfile.py meta       FILE [FIELD=VALUE ...]
+                                              print a preset's header, or set presetName,
+                                              presetAuthor, presetComment, presetDescription
+                                              or url in place
 
 In `matrix` and `rowcurves` output, macros, oscillators and FX slots use the UI's
 numbering (macros count from 1, oscillators are A, B, C, Noise, Sub, and FX slots
@@ -295,6 +299,38 @@ def row_curves(body, curves, tolerance=1e-4):
         yield i, s, matches, (None if matches or not dists else dists[0])
 
 
+# Header fields that `meta` may set. The others (fileType, product, version, hash
+# and so on) describe the container and stay as Serum wrote them.
+META_FIELDS = ("presetName", "presetAuthor", "presetComment", "presetDescription", "url")
+
+
+def set_meta(path, fields):
+    """
+    Rewrite a preset in place with the given header fields changed.
+
+    The body is re-encoded unchanged, so this refuses a file whose body does not
+    re-encode to the stored CBOR byte for byte: rewriting it would change more
+    than the header. The new file is written beside the old one
+    and moved over it, so a failed write leaves the original intact.
+    """
+    unknown = sorted(set(fields) - set(META_FIELDS))
+    if unknown:
+        raise ValueError(f"cannot set {', '.join(unknown)}; settable: {', '.join(META_FIELDS)}")
+    header, fmt, body = read(path)
+    if header.get("fileType") != "SerumPreset":
+        raise ValueError(f"{path}: not a preset")
+    with open(path, "rb") as f:
+        d = f.read()
+    n = struct.unpack("<Q", d[9:17])[0]
+    raw = zstandard.ZstdDecompressor().decompress(d[25 + n :], max_output_size=64 * 2**20)
+    if encode(body) != raw:
+        raise ValueError(f"{path}: body does not round-trip; not rewriting it")
+    header.update(fields)
+    tmp = f"{path}.tmp"
+    write(tmp, header, body, fmt)
+    os.replace(tmp, path)
+
+
 # ---------------------------------------------------------------- diff
 def diff(a, b, path=""):
     """Yield (path, a_value, b_value) for every differing leaf."""
@@ -321,7 +357,7 @@ def _short(v, n=120):
 
 
 # Arguments each command needs after its name, checked before any file is read.
-MIN_ARGS = {"verify": 1, "dump": 1, "matrix": 1, "rowcurves": 2, "diff": 2, "curve": 1}
+MIN_ARGS = {"verify": 1, "dump": 1, "matrix": 1, "rowcurves": 2, "diff": 2, "curve": 1, "meta": 1}
 
 
 def main(argv):
@@ -371,6 +407,22 @@ def main(argv):
     elif cmd == "curve":
         for x, v in curve_points(body):
             print(f"x {x:.4f} (MIDI {127 * x:6.1f})  value {v:.4f}  ({16 * v:5.2f} squares of 16)")
+    elif cmd == "meta":
+        if len(argv) == 3:
+            print(json.dumps({k: v for k, v in h.items() if k != "hash"}, indent=1))
+            return 0
+        fields = {}
+        for arg in argv[3:]:
+            if "=" not in arg:
+                print(f"error: expected FIELD=VALUE, got {arg!r}", file=sys.stderr)
+                return 1
+            key, value = arg.split("=", 1)
+            fields[key] = value
+        try:
+            set_meta(f, fields)
+        except ValueError as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 1
     return 0
 
 
