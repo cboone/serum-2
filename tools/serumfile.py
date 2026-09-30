@@ -42,6 +42,10 @@ CLI:
                                               print a preset's header, or set presetName,
                                               presetAuthor, presetComment, presetDescription
                                               or url in place
+    serumfile.py patch      FILE PATCH.json [OUT]
+                                              apply a JSON merge patch ({"header": ...,
+                                              "body": ...}; null removes a key) to a preset
+    serumfile.py sortmatrix FILE [OUT]        put a preset's matrix rows in canonical order
 
 In `matrix` and `rowcurves` output, macros, oscillators and FX slots use the UI's
 numbering (macros count from 1, oscillators are A, B, C, Noise, Sub, and FX slots
@@ -299,23 +303,21 @@ def row_curves(body, curves, tolerance=1e-4):
         yield i, s, matches, (None if matches or not dists else dists[0])
 
 
+# ---------------------------------------------------------------- preset edits
 # Header fields that `meta` may set. The others (fileType, product, version, hash
-# and so on) describe the container and stay as Serum wrote them.
+# and so on) describe the container and stay as Serum wrote them. `patch` may also
+# replace `tags`.
 META_FIELDS = ("presetName", "presetAuthor", "presetComment", "presetDescription", "url")
+PATCH_HEADER_FIELDS = META_FIELDS + ("tags",)
 
 
-def set_meta(path, fields):
+def read_editable(path):
     """
-    Rewrite a preset in place with the given header fields changed.
+    Return (header, fmt, body) for a preset that is safe to rewrite.
 
-    The body is re-encoded unchanged, so this refuses a file whose body does not
-    re-encode to the stored CBOR byte for byte: rewriting it would change more
-    than the header. The new file is written beside the old one
-    and moved over it, so a failed write leaves the original intact.
+    The body must re-encode to the stored CBOR byte for byte; otherwise a rewrite
+    would change more than the edit asked for, so this refuses the file.
     """
-    unknown = sorted(set(fields) - set(META_FIELDS))
-    if unknown:
-        raise ValueError(f"cannot set {', '.join(unknown)}; settable: {', '.join(META_FIELDS)}")
     header, fmt, body = read(path)
     if header.get("fileType") != "SerumPreset":
         raise ValueError(f"{path}: not a preset")
@@ -325,10 +327,107 @@ def set_meta(path, fields):
     raw = zstandard.ZstdDecompressor().decompress(d[25 + n :], max_output_size=64 * 2**20)
     if encode(body) != raw:
         raise ValueError(f"{path}: body does not round-trip; not rewriting it")
-    header.update(fields)
+    return header, fmt, body
+
+
+def replace_file(path, header, body, fmt):
+    """Write beside `path` and move the result over it, so a failed write leaves it intact."""
     tmp = f"{path}.tmp"
     write(tmp, header, body, fmt)
     os.replace(tmp, path)
+
+
+def set_meta(path, fields):
+    """Rewrite a preset in place with the given header fields changed."""
+    unknown = sorted(set(fields) - set(META_FIELDS))
+    if unknown:
+        raise ValueError(f"cannot set {', '.join(unknown)}; settable: {', '.join(META_FIELDS)}")
+    header, fmt, body = read_editable(path)
+    header.update(fields)
+    replace_file(path, header, body, fmt)
+
+
+def merge_patch(target, patch):
+    """
+    Apply a JSON merge patch (RFC 7396): objects merge key by key, null removes a
+    key, and any other value replaces the target's. Existing keys keep their
+    position and new keys are appended, so Serum's key order is preserved.
+    """
+    if not isinstance(patch, dict):
+        return patch
+    result = dict(target) if isinstance(target, dict) else {}
+    for key, value in patch.items():
+        if value is None:
+            result.pop(key, None)
+        else:
+            result[key] = merge_patch(result.get(key), value)
+    return result
+
+
+def patch_preset(path, patch, out=None):
+    """
+    Apply {"header": ..., "body": ...} merge patches to a preset, writing `out`, or
+    `path` in place. Header patches may touch only PATCH_HEADER_FIELDS.
+    """
+    unknown = sorted(set(patch) - {"header", "body"})
+    if unknown:
+        raise ValueError(f"a patch has only header and body keys, not {', '.join(unknown)}")
+    header_patch = patch.get("header", {})
+    unknown = sorted(set(header_patch) - set(PATCH_HEADER_FIELDS))
+    if unknown:
+        raise ValueError(
+            f"cannot patch header {', '.join(unknown)}; patchable: {', '.join(PATCH_HEADER_FIELDS)}"
+        )
+    header, fmt, body = read_editable(path)
+    header = merge_patch(header, header_patch)
+    body = merge_patch(body, patch.get("body", {}))
+    replace_file(out or path, header, body, fmt)
+
+
+# Canonical matrix order, destination first: rows that drive macros, then the
+# oscillators (A, B, C, Noise, Sub, each with its wavetable parameters), filters,
+# global voice parameters such as Amp, other modules such as LFOs and envelopes,
+# and effects in rack order. Within a destination module rows sort by parameter ID,
+# then source, then aux, and otherwise keep their order.
+MATRIX_GROUPS = {"Macro": 0, "Oscillator": 1, "WTOsc": 1, "VoiceFilter": 2, "Global": 3}
+EMPTY_SLOT = {"plainParams": {}}
+# MIDI map parameter IDs for macros 1-8, inferred from saved presets (7000000 +
+# 1000 * macro index). Other IDs may name matrix rows by position.
+MACRO_PARAM_IDS = {7000000 + 1000 * i for i in range(8)}
+
+
+def matrix_key(slot):
+    mod = slot.get("destModuleTypeString") or ""
+    mid = slot.get("destModuleID")
+    mid = mid if isinstance(mid, int) else 1 << 16
+    if mod in MATRIX_GROUPS:
+        group = MATRIX_GROUPS[mod]
+    elif mod.startswith("FX"):
+        group = 5
+    else:
+        group = 4
+    src, aux = (slot.get("source", []) + [0, 0])[:2]
+    kind = 1 if mod == "WTOsc" else 0
+    return (group, mod if group == 4 else "", mid, kind, slot.get("destModuleParamID", 0), src, aux)
+
+
+def sort_matrix(body):
+    """
+    Return a copy of `body` with its matrix rows in canonical order and the empty
+    slots after them. Refuses a preset whose MIDI map targets anything but macros,
+    since those targets may refer to rows by position.
+    """
+    for entry in body.get("midiMap", []):
+        other = [p for p in entry.get("paramIDs", []) if p not in MACRO_PARAM_IDS]
+        if other:
+            raise ValueError(f"MIDI map targets non-macro parameters {other}; not reordering rows")
+    keys = [f"ModSlot{i}" for i in range(64) if f"ModSlot{i}" in body]
+    rows = [body[k] for k in keys if body[k] != EMPTY_SLOT]
+    empty = [body[k] for k in keys if body[k] == EMPTY_SLOT]
+    result = dict(body)
+    for key, slot in zip(keys, sorted(rows, key=matrix_key) + empty, strict=True):
+        result[key] = slot
+    return result
 
 
 # ---------------------------------------------------------------- diff
@@ -357,7 +456,17 @@ def _short(v, n=120):
 
 
 # Arguments each command needs after its name, checked before any file is read.
-MIN_ARGS = {"verify": 1, "dump": 1, "matrix": 1, "rowcurves": 2, "diff": 2, "curve": 1, "meta": 1}
+MIN_ARGS = {
+    "verify": 1,
+    "dump": 1,
+    "matrix": 1,
+    "rowcurves": 2,
+    "diff": 2,
+    "curve": 1,
+    "meta": 1,
+    "patch": 2,
+    "sortmatrix": 1,
+}
 
 
 def main(argv):
@@ -420,6 +529,21 @@ def main(argv):
             fields[key] = value
         try:
             set_meta(f, fields)
+        except ValueError as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 1
+    elif cmd == "patch":
+        with open(argv[3]) as fh:
+            patch = json.load(fh)
+        try:
+            patch_preset(f, patch, argv[4] if len(argv) > 4 else None)
+        except ValueError as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 1
+    elif cmd == "sortmatrix":
+        try:
+            h, fmt, body = read_editable(f)
+            replace_file(argv[3] if len(argv) > 3 else f, h, sort_matrix(body), fmt)
         except ValueError as e:
             print(f"error: {e}", file=sys.stderr)
             return 1

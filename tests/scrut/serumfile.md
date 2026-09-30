@@ -155,6 +155,67 @@ error: expected FIELD=VALUE, got 'presetName'
 [1]
 ```
 
+## patch merges changes into the body and header
+
+`null` removes a key, objects merge key by key, and other values replace the old ones. The result still verifies, and a diff shows only the patched keys.
+
+```scrut
+$ printf '{"header": {"tags": ["Poly"]}, "body": {"ModSlot1": {"plainParams": {"kParamAmount": 50.0}}, "ModSlot0": {"plainParams": {"kParamAmount": null}}}}' > poly.json && "${REPO_ROOT}/tools/serumfile.py" patch "${REPO_ROOT}/tests/scrut/fixtures/serum/Presets/Example.SerumPreset" poly.json patched.SerumPreset && "${REPO_ROOT}/tools/serumfile.py" verify patched.SerumPreset
+hash ok: True   cbor round-trip identical: True   fmt 2
+```
+
+```scrut
+$ "${REPO_ROOT}/tools/serumfile.py" diff "${REPO_ROOT}/tests/scrut/fixtures/serum/Presets/Example.SerumPreset" patched.SerumPreset | grep '^/'
+/header/tags
+/ModSlot0/plainParams/kParamAmount
+/ModSlot1/plainParams/kParamAmount
+```
+
+## patch refuses container header fields and unknown top-level keys
+
+```scrut
+$ printf '{"header": {"fileType": "Other"}}' > bad-header.json && "${REPO_ROOT}/tools/serumfile.py" patch "${REPO_ROOT}/tests/scrut/fixtures/serum/Presets/Example.SerumPreset" bad-header.json refused.SerumPreset 2>&1
+error: cannot patch header fileType; patchable: presetName, presetAuthor, presetComment, presetDescription, url, tags
+[1]
+```
+
+```scrut
+$ printf '{"Global0": {}}' > bad-top.json && "${REPO_ROOT}/tools/serumfile.py" patch "${REPO_ROOT}/tests/scrut/fixtures/serum/Presets/Example.SerumPreset" bad-top.json refused.SerumPreset 2>&1; test ! -e refused.SerumPreset && echo "nothing written"
+error: a patch has only header and body keys, not Global0
+nothing written
+```
+
+## sortmatrix puts rows in canonical order
+
+Macro destinations come first, then oscillators, filters, global voice parameters and effects in rack order.
+
+```scrut
+$ "${REPO_ROOT}/tools/serumfile.py" sortmatrix "${REPO_ROOT}/tests/scrut/fixtures/serum/Presets/Example.SerumPreset" sorted.SerumPreset && "${REPO_ROOT}/tools/serumfile.py" matrix sorted.SerumPreset
+ 0  ModWheel -> Macro2.Value                       amt   50.00  uni  aux Macro8
+ 1      Note -> Oscillator[A].Detune               amt   20.00  bi   aux -       curve[26pts] {'MainCurveData': 1.0}
+ 2      LFO1 -> VoiceFilter[0].Freq                amt default  uni  aux -
+ 3      Velo -> Global[0].VoiceAmp                 amt  100.00  uni  aux -       curve[1pts] {'MainCurveData': 1.0}
+ 4    Macro1 -> FXReverb[2].Wet                    amt   25.00  uni  aux -
+```
+
+Sorting a sorted preset reproduces it byte for byte, and nothing outside the matrix changes.
+
+```scrut
+$ "${REPO_ROOT}/tools/serumfile.py" sortmatrix sorted.SerumPreset resorted.SerumPreset && cmp sorted.SerumPreset resorted.SerumPreset && "${REPO_ROOT}/tools/serumfile.py" diff "${REPO_ROOT}/tests/scrut/fixtures/serum/Presets/Example.SerumPreset" sorted.SerumPreset | grep '^/' | grep -c -v '^/ModSlot'
+0
+[1]
+```
+
+## sortmatrix refuses a MIDI map that targets other parameters
+
+Such targets may name matrix rows by position, so reordering could break them.
+
+```scrut
+$ printf '{"body": {"midiMap": [{"ccNum": 21, "paramIDs": [123]}]}}' > map.json && "${REPO_ROOT}/tools/serumfile.py" patch "${REPO_ROOT}/tests/scrut/fixtures/serum/Presets/Example.SerumPreset" map.json mapped.SerumPreset && "${REPO_ROOT}/tools/serumfile.py" sortmatrix mapped.SerumPreset 2>&1
+error: MIDI map targets non-macro parameters [123]; not reordering rows
+[1]
+```
+
 ## an unknown command prints usage and exits 1
 
 ```scrut

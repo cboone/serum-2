@@ -8,6 +8,7 @@ Reso
 Rossler
 rowcurves
 serumfile
+sortmatrix
 wavetable
 wavetables
 Xfer
