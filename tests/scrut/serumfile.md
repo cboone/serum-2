@@ -157,6 +157,15 @@ $ cmp guarded.SerumPreset "${REPO_ROOT}/tests/scrut/fixtures/serum/Presets/Examp
 unchanged
 ```
 
+## meta refuses to print a curve's header
+
+`meta` is for presets in both forms, reading as well as writing.
+
+```scrut
+$ "${REPO_ROOT}/tools/serumfile.py" meta "${REPO_ROOT}/tests/scrut/fixtures/serum/Curves/S Rise.XferShape" 2>&1 | sed "s|${REPO_ROOT}/||"
+error: tests/scrut/fixtures/serum/Curves/S Rise.XferShape: not a preset
+```
+
 ## meta refuses a curve and an argument without a value
 
 ```scrut
@@ -200,6 +209,60 @@ error: cannot patch header fileType; patchable: presetName, presetAuthor, preset
 $ printf '{"Global0": {}}' > bad-top.json && "${REPO_ROOT}/tools/serumfile.py" patch "${REPO_ROOT}/tests/scrut/fixtures/serum/Presets/Example.SerumPreset" bad-top.json refused.SerumPreset 2>&1; test ! -e refused.SerumPreset && echo "nothing written"
 error: a patch has only header and body keys, not Global0
 nothing written
+```
+
+## patch refuses anything but objects
+
+A patch that is not a JSON object, or whose `header` or `body` is not one, would otherwise replace the whole preset body. Malformed JSON is refused the same way, with no traceback.
+
+```scrut
+$ printf '[]' > list.json && "${REPO_ROOT}/tools/serumfile.py" patch "${REPO_ROOT}/tests/scrut/fixtures/serum/Presets/Example.SerumPreset" list.json refused.SerumPreset 2>&1
+error: a patch is a JSON object: {"header": {...}, "body": {...}}
+[1]
+```
+
+```scrut
+$ printf '{"body": null}' > null-body.json && "${REPO_ROOT}/tools/serumfile.py" patch "${REPO_ROOT}/tests/scrut/fixtures/serum/Presets/Example.SerumPreset" null-body.json refused.SerumPreset 2>&1
+error: a patch's body must be a JSON object
+[1]
+```
+
+```scrut
+$ printf '{"header": "Other"}' > scalar-header.json && "${REPO_ROOT}/tools/serumfile.py" patch "${REPO_ROOT}/tests/scrut/fixtures/serum/Presets/Example.SerumPreset" scalar-header.json refused.SerumPreset 2>&1
+error: a patch's header must be a JSON object
+[1]
+```
+
+```scrut
+$ printf '{"body": ' > broken.json && "${REPO_ROOT}/tools/serumfile.py" patch "${REPO_ROOT}/tests/scrut/fixtures/serum/Presets/Example.SerumPreset" broken.json refused.SerumPreset 2>&1 | sed 's/: line .*//'; test ! -e refused.SerumPreset && echo "nothing written"
+error: Expecting value
+nothing written
+```
+
+## editing commands refuse a preset whose body does not round-trip
+
+This copy of the example stores its floats as float64, so it decodes to the same body but re-encoding gives different bytes. Rewriting it would change more than the edit, so `meta`, `patch` and `sortmatrix` all refuse it and leave it as it was.
+
+```scrut
+$ PYTHONPATH="${REPO_ROOT}/tools" uv run -q --script "${REPO_ROOT}/tests/scrut/fixtures/widen_floats.py" "${REPO_ROOT}/tests/scrut/fixtures/serum/Presets/Example.SerumPreset" wide.SerumPreset && cp wide.SerumPreset wide-before.SerumPreset && "${REPO_ROOT}/tools/serumfile.py" meta wide.SerumPreset presetName=Other 2>&1
+error: wide.SerumPreset: body does not round-trip; not rewriting it
+[1]
+```
+
+```scrut
+$ printf '{}' > empty.json && "${REPO_ROOT}/tools/serumfile.py" patch wide.SerumPreset empty.json 2>&1; "${REPO_ROOT}/tools/serumfile.py" sortmatrix wide.SerumPreset 2>&1; cmp wide.SerumPreset wide-before.SerumPreset && echo unchanged
+error: wide.SerumPreset: body does not round-trip; not rewriting it
+error: wide.SerumPreset: body does not round-trip; not rewriting it
+unchanged
+```
+
+## editing leaves no temporary files behind
+
+Each rewrite goes through a uniquely named file beside the target, moved over it at the end.
+
+```scrut
+$ mkdir -p edits && cp "${REPO_ROOT}/tests/scrut/fixtures/serum/Presets/Example.SerumPreset" edits/ && "${REPO_ROOT}/tools/serumfile.py" meta edits/Example.SerumPreset presetName=Edited && "${REPO_ROOT}/tools/serumfile.py" sortmatrix edits/Example.SerumPreset && ls -A edits
+Example.SerumPreset
 ```
 
 ## sortmatrix puts rows in canonical order

@@ -56,8 +56,10 @@ import glob
 import hashlib
 import json
 import os
+import stat
 import struct
 import sys
+import tempfile
 
 import cbor2
 import zstandard
@@ -331,10 +333,23 @@ def read_editable(path):
 
 
 def replace_file(path, header, body, fmt):
-    """Write beside `path` and move the result over it, so a failed write leaves it intact."""
-    tmp = f"{path}.tmp"
-    write(tmp, header, body, fmt)
-    os.replace(tmp, path)
+    """
+    Write to a uniquely named file beside `path` and move it over `path`, so a
+    failed write leaves the original intact and concurrent runs never share a
+    temporary file. The result keeps the original's permissions, or gets 0644.
+    """
+    directory = os.path.dirname(os.path.abspath(path))
+    fd, tmp = tempfile.mkstemp(dir=directory, prefix=f".{os.path.basename(path)}.", suffix=".tmp")
+    os.close(fd)
+    try:
+        write(tmp, header, body, fmt)
+        mode = stat.S_IMODE(os.stat(path).st_mode) if os.path.exists(path) else 0o644
+        os.chmod(tmp, mode)
+        os.replace(tmp, path)
+    except BaseException:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+        raise
 
 
 def body_copy(header_patch, body):
@@ -380,6 +395,11 @@ def patch_preset(path, patch, out=None):
     Apply {"header": ..., "body": ...} merge patches to a preset, writing `out`, or
     `path` in place. Header patches may touch only PATCH_HEADER_FIELDS.
     """
+    if not isinstance(patch, dict):
+        raise ValueError('a patch is a JSON object: {"header": {...}, "body": {...}}')
+    for part in ("header", "body"):
+        if not isinstance(patch.get(part, {}), dict):
+            raise ValueError(f"a patch's {part} must be a JSON object")
     unknown = sorted(set(patch) - {"header", "body"})
     if unknown:
         raise ValueError(f"a patch has only header and body keys, not {', '.join(unknown)}")
@@ -529,6 +549,9 @@ def main(argv):
         for x, v in curve_points(body):
             print(f"x {x:.4f} (MIDI {127 * x:6.1f})  value {v:.4f}  ({16 * v:5.2f} squares of 16)")
     elif cmd == "meta":
+        if h.get("fileType") != "SerumPreset":
+            print(f"error: {f}: not a preset", file=sys.stderr)
+            return 1
         if len(argv) == 3:
             print(json.dumps({k: v for k, v in h.items() if k != "hash"}, indent=1))
             return 0
@@ -545,9 +568,9 @@ def main(argv):
             print(f"error: {e}", file=sys.stderr)
             return 1
     elif cmd == "patch":
-        with open(argv[3]) as fh:
-            patch = json.load(fh)
         try:
+            with open(argv[3]) as fh:
+                patch = json.load(fh)
             patch_preset(f, patch, argv[4] if len(argv) > 4 else None)
         except ValueError as e:
             print(f"error: {e}", file=sys.stderr)
