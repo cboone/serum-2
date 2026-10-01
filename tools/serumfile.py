@@ -38,6 +38,14 @@ CLI:
     serumfile.py rowcurves  FILE CURVE_DIR    name the curve file in CURVE_DIR matching each row
     serumfile.py diff       A B               every differing leaf between two files
     serumfile.py curve      FILE              point list of a .XferShape curve
+    serumfile.py meta       FILE [FIELD=VALUE ...]
+                                              print a preset's header, or set presetName,
+                                              presetAuthor, presetComment, presetDescription
+                                              or url in place
+    serumfile.py patch      FILE PATCH.json [OUT]
+                                              apply a JSON merge patch ({"header": ...,
+                                              "body": ...}; null removes a key) to a preset
+    serumfile.py sortmatrix FILE [OUT]        put a preset's matrix rows in canonical order
 
 In `matrix` and `rowcurves` output, macros, oscillators and FX slots use the UI's
 numbering (macros count from 1, oscillators are A, B, C, Noise, Sub, and FX slots
@@ -48,8 +56,10 @@ import glob
 import hashlib
 import json
 import os
+import stat
 import struct
 import sys
+import tempfile
 
 import cbor2
 import zstandard
@@ -295,6 +305,163 @@ def row_curves(body, curves, tolerance=1e-4):
         yield i, s, matches, (None if matches or not dists else dists[0])
 
 
+# ---------------------------------------------------------------- preset edits
+# Header fields that `meta` may set. The others (fileType, product, version, hash
+# and so on) describe the container and stay as Serum wrote them. `patch` may also
+# replace `tags`.
+META_FIELDS = ("presetName", "presetAuthor", "presetComment", "presetDescription", "url")
+PATCH_HEADER_FIELDS = META_FIELDS + ("tags",)
+
+
+def read_editable(path):
+    """
+    Return (header, fmt, body) for a preset that is safe to rewrite.
+
+    The body must re-encode to the stored CBOR byte for byte; otherwise a rewrite
+    would change more than the edit asked for, so this refuses the file.
+    """
+    header, fmt, body = read(path)
+    if header.get("fileType") != "SerumPreset":
+        raise ValueError(f"{path}: not a preset")
+    with open(path, "rb") as f:
+        d = f.read()
+    n = struct.unpack("<Q", d[9:17])[0]
+    raw = zstandard.ZstdDecompressor().decompress(d[25 + n :], max_output_size=64 * 2**20)
+    if encode(body) != raw:
+        raise ValueError(f"{path}: body does not round-trip; not rewriting it")
+    return header, fmt, body
+
+
+def replace_file(path, header, body, fmt):
+    """
+    Write to a uniquely named file beside `path` and move it over `path`, so a
+    failed write leaves the original intact and concurrent runs never share a
+    temporary file. The result keeps the original's permissions, or gets 0644.
+    """
+    directory = os.path.dirname(os.path.abspath(path))
+    fd, tmp = tempfile.mkstemp(dir=directory, prefix=f".{os.path.basename(path)}.", suffix=".tmp")
+    os.close(fd)
+    try:
+        write(tmp, header, body, fmt)
+        mode = stat.S_IMODE(os.stat(path).st_mode) if os.path.exists(path) else 0o644
+        os.chmod(tmp, mode)
+        os.replace(tmp, path)
+    except BaseException:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+        raise
+
+
+def body_copy(header_patch, body):
+    """
+    The part of a header patch that applies to the body. Presets saved by Serum
+    repeat presetName, presetAuthor, presetComment, presetDescription, tags and url
+    at the top level of the body; which copy Serum reads is unconfirmed, so edits
+    keep both in step wherever the body has the field.
+    """
+    return {k: v for k, v in header_patch.items() if k in body}
+
+
+def set_meta(path, fields):
+    """Rewrite a preset in place with the given header fields changed."""
+    unknown = sorted(set(fields) - set(META_FIELDS))
+    if unknown:
+        raise ValueError(f"cannot set {', '.join(unknown)}; settable: {', '.join(META_FIELDS)}")
+    header, fmt, body = read_editable(path)
+    header.update(fields)
+    body = merge_patch(body, body_copy(fields, body))
+    replace_file(path, header, body, fmt)
+
+
+def merge_patch(target, patch):
+    """
+    Apply a JSON merge patch (RFC 7396): objects merge key by key, null removes a
+    key, and any other value replaces the target's. Existing keys keep their
+    position and new keys are appended, so Serum's key order is preserved.
+    """
+    if not isinstance(patch, dict):
+        return patch
+    result = dict(target) if isinstance(target, dict) else {}
+    for key, value in patch.items():
+        if value is None:
+            result.pop(key, None)
+        else:
+            result[key] = merge_patch(result.get(key), value)
+    return result
+
+
+def patch_preset(path, patch, out=None):
+    """
+    Apply {"header": ..., "body": ...} merge patches to a preset, writing `out`, or
+    `path` in place. Header patches may touch only PATCH_HEADER_FIELDS.
+    """
+    if not isinstance(patch, dict):
+        raise ValueError('a patch is a JSON object: {"header": {...}, "body": {...}}')
+    for part in ("header", "body"):
+        if not isinstance(patch.get(part, {}), dict):
+            raise ValueError(f"a patch's {part} must be a JSON object")
+    unknown = sorted(set(patch) - {"header", "body"})
+    if unknown:
+        raise ValueError(f"a patch has only header and body keys, not {', '.join(unknown)}")
+    header_patch = patch.get("header", {})
+    unknown = sorted(set(header_patch) - set(PATCH_HEADER_FIELDS))
+    if unknown:
+        raise ValueError(
+            f"cannot patch header {', '.join(unknown)}; patchable: {', '.join(PATCH_HEADER_FIELDS)}"
+        )
+    header, fmt, body = read_editable(path)
+    header = merge_patch(header, header_patch)
+    body = merge_patch(body, body_copy(header_patch, body))
+    body = merge_patch(body, patch.get("body", {}))
+    replace_file(out or path, header, body, fmt)
+
+
+# Canonical matrix order, destination first: rows that drive macros, then the
+# oscillators (A, B, C, Noise, Sub, each with its wavetable parameters), filters,
+# global voice parameters such as Amp, other modules such as LFOs and envelopes,
+# and effects in rack order. Within a destination module rows sort by parameter ID,
+# then source, then aux, and otherwise keep their order.
+MATRIX_GROUPS = {"Macro": 0, "Oscillator": 1, "WTOsc": 1, "VoiceFilter": 2, "Global": 3}
+EMPTY_SLOT = {"plainParams": {}}
+# MIDI map parameter IDs for macros 1-8, inferred from saved presets (7000000 +
+# 1000 * macro index). Other IDs may name matrix rows by position.
+MACRO_PARAM_IDS = {7000000 + 1000 * i for i in range(8)}
+
+
+def matrix_key(slot):
+    mod = slot.get("destModuleTypeString") or ""
+    mid = slot.get("destModuleID")
+    mid = mid if isinstance(mid, int) else 1 << 16
+    if mod in MATRIX_GROUPS:
+        group = MATRIX_GROUPS[mod]
+    elif mod.startswith("FX"):
+        group = 5
+    else:
+        group = 4
+    src, aux = (slot.get("source", []) + [0, 0])[:2]
+    kind = 1 if mod == "WTOsc" else 0
+    return (group, mod if group == 4 else "", mid, kind, slot.get("destModuleParamID", 0), src, aux)
+
+
+def sort_matrix(body):
+    """
+    Return a copy of `body` with its matrix rows in canonical order and the empty
+    slots after them. Refuses a preset whose MIDI map targets anything but macros,
+    since those targets may refer to rows by position.
+    """
+    for entry in body.get("midiMap", []):
+        other = [p for p in entry.get("paramIDs", []) if p not in MACRO_PARAM_IDS]
+        if other:
+            raise ValueError(f"MIDI map targets non-macro parameters {other}; not reordering rows")
+    keys = [f"ModSlot{i}" for i in range(64) if f"ModSlot{i}" in body]
+    rows = [body[k] for k in keys if body[k] != EMPTY_SLOT]
+    empty = [body[k] for k in keys if body[k] == EMPTY_SLOT]
+    result = dict(body)
+    for key, slot in zip(keys, sorted(rows, key=matrix_key) + empty, strict=True):
+        result[key] = slot
+    return result
+
+
 # ---------------------------------------------------------------- diff
 def diff(a, b, path=""):
     """Yield (path, a_value, b_value) for every differing leaf."""
@@ -321,7 +488,17 @@ def _short(v, n=120):
 
 
 # Arguments each command needs after its name, checked before any file is read.
-MIN_ARGS = {"verify": 1, "dump": 1, "matrix": 1, "rowcurves": 2, "diff": 2, "curve": 1}
+MIN_ARGS = {
+    "verify": 1,
+    "dump": 1,
+    "matrix": 1,
+    "rowcurves": 2,
+    "diff": 2,
+    "curve": 1,
+    "meta": 1,
+    "patch": 2,
+    "sortmatrix": 1,
+}
 
 
 def main(argv):
@@ -371,6 +548,40 @@ def main(argv):
     elif cmd == "curve":
         for x, v in curve_points(body):
             print(f"x {x:.4f} (MIDI {127 * x:6.1f})  value {v:.4f}  ({16 * v:5.2f} squares of 16)")
+    elif cmd == "meta":
+        if h.get("fileType") != "SerumPreset":
+            print(f"error: {f}: not a preset", file=sys.stderr)
+            return 1
+        if len(argv) == 3:
+            print(json.dumps({k: v for k, v in h.items() if k != "hash"}, indent=1))
+            return 0
+        fields = {}
+        for arg in argv[3:]:
+            if "=" not in arg:
+                print(f"error: expected FIELD=VALUE, got {arg!r}", file=sys.stderr)
+                return 1
+            key, value = arg.split("=", 1)
+            fields[key] = value
+        try:
+            set_meta(f, fields)
+        except ValueError as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 1
+    elif cmd == "patch":
+        try:
+            with open(argv[3]) as fh:
+                patch = json.load(fh)
+            patch_preset(f, patch, argv[4] if len(argv) > 4 else None)
+        except ValueError as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 1
+    elif cmd == "sortmatrix":
+        try:
+            h, fmt, body = read_editable(f)
+            replace_file(argv[3] if len(argv) > 3 else f, h, sort_matrix(body), fmt)
+        except ValueError as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 1
     return 0
 
 
