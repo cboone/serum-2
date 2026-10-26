@@ -15,8 +15,8 @@
     "spell": "cspell --no-progress ."
   },
   "devDependencies": {
-    "cspell": "10.3.6",
-    "markdownlint-cli2": "0.23.3",
+    "cspell": "10.4.0",
+    "markdownlint-cli2": "0.24.0",
     "prettier": "3.9.10"
   }
 }
